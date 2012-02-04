@@ -1,0 +1,99 @@
+#!/usr/bin/python
+
+import sys
+import subprocess
+import re
+from optparse import OptionParser
+
+tab_size = 4
+
+class StackTrace(object): pass
+
+def get_jstack(pid):
+    jstack = run_command('jstack', [str(pid)])
+    res = []
+    def add_st(st):
+        st.frames = list(reversed(st.frames))
+        res.append(st)
+    current = None
+    for line in jstack.split('\n'):
+        mo_head = re.search(r'^"([^"]+)".*tid=(0x[0-9a-f]+).*nid=(0x[0-9a-f]+)', line)
+        mo_frame = re.search(r'^\tat (.+)', line)
+        mo_state = re.search(r'java.lang.Thread.State: (.+)', line)
+        if mo_head is not None:
+            if current is not None: add_st(current)
+            st = StackTrace()
+            st.name = mo_head.group(1)
+            st.tid = int(mo_head.group(2), 16)
+            st.nid = int(mo_head.group(3), 16)
+            st.frames = []
+            st.state = ''
+            current = st
+        elif mo_frame is not None:
+            current.frames.append(mo_frame.group(1))
+        elif mo_state is not None:
+            st.state = mo_state.group(1) 
+    if mo_head is not None: add_st(current)
+    return res
+
+def run_command(cmd, args):
+    try:
+        child = subprocess.Popen([cmd] + args, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        stdout, stderr = child.communicate()
+        if child.returncode != 0:
+            raise EnvironmentError(child.returncode, stderr)
+    except OSError, e:
+        if e.errno == 2: raise EnvironmentError('Cannot execute %s. Is it in the path?' % cmd)
+        else: raise
+    return stdout
+
+def build_frame_tree(st):
+    def process_frames(frame_dict, frames, stack):
+        if frames:
+            process_frames(frame_dict.setdefault(frames[0], {}), frames[1:], stack)
+        else:
+            frame_dict.setdefault('k', []).append(stack)
+    roots = {}
+    for stack in st:
+        if not stack.frames:
+            stack.frames = ['<no stack trace information>']
+        process_frames(roots, stack.frames, stack)
+    return roots
+    
+def print_frame_tree(x, indent = 0):
+    for a, b in sorted(x.items()):
+        if a == 'k':
+            threads = b
+            for thread in threads:
+                print '%s"%s" tid=0x%x nid=%d %s' % \
+                    (' ' * (indent + 1) * tab_size, thread.name, thread.tid, thread.nid, thread.state)
+            print
+        else:
+            frame, children = a, b
+            print '%s- %s' % (' ' * indent * tab_size, frame)
+            if len(children) > 1:
+                new_indent = indent + 1
+            else:
+                new_indent = indent
+            print_frame_tree(children, new_indent)
+    
+def error_exit(msg):
+    print >> sys.stderr, '%s: %s' % (sys.argv[0], msg)
+    sys.exit(1)
+
+def parse_args():
+    parser = OptionParser('usage: %prog [options] pid\nPretty print java stack traces')
+    options, args = parser.parse_args()
+    if len(args) != 1:
+        parser.error('A java pid must be supplied')
+    pid = int(args[0])
+    return pid, options
+
+if __name__ == '__main__':
+    pid, options = parse_args()
+    try:
+        roots = build_frame_tree(get_jstack(pid))
+        print_frame_tree(roots)
+    except EnvironmentError, e:
+        error_exit(e)
+            
