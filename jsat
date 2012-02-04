@@ -15,25 +15,33 @@ def get_jstack(pid):
     def add_st(st):
         st.frames = list(reversed(st.frames))
         res.append(st)
-    current = None
+    curr = None
     for line in jstack.split('\n'):
         mo_head = re.search(r'^"([^"]+)".*tid=(0x[0-9a-f]+).*nid=(0x[0-9a-f]+)', line)
         mo_frame = re.search(r'^\tat (.+)', line)
-        mo_state = re.search(r'java.lang.Thread.State: (.+)', line)
+        mo_state = re.search(r'java.lang.Thread.State: ([A-Z_]+)(?: \(([^)]+)\))?', line)
+        mo_blocked = re.search(r'- [^()<>]+ <0x([^>]+)> \(a ([^)]+)\)', line)
         if mo_head is not None:
-            if current is not None: add_st(current)
+            if curr is not None: add_st(curr)
             st = StackTrace()
             st.name = mo_head.group(1)
             st.tid = int(mo_head.group(2), 16)
             st.nid = int(mo_head.group(3), 16)
             st.frames = []
             st.state = ''
-            current = st
+            st.state_detail = None
+            st.blocked_id = None
+            curr = st
         elif mo_frame is not None:
-            current.frames.append(mo_frame.group(1))
+            curr.frames.append(mo_frame.group(1))
         elif mo_state is not None:
-            st.state = mo_state.group(1) 
-    if mo_head is not None: add_st(current)
+            curr.state = mo_state.group(1) 
+            curr.state_detail = mo_state.group(2)
+        elif mo_blocked is not None:
+            if curr.state in ['WAITING', 'TIMED_WAITING', 'BLOCKED'] and len(curr.frames) == 1:
+                curr.blocked_id = int(mo_blocked.group(1), 16)
+                curr.blocked_class = mo_blocked.group(2) 
+    if mo_head is not None: add_st(curr)
     return res
 
 def run_command(cmd, args):
@@ -64,9 +72,13 @@ def print_frame_tree(x, indent = 0):
     for a, b in sorted(x.items()):
         if a == 'k':
             threads = b
-            for thread in threads:
-                print '%s"%s" tid=0x%x nid=%d %s' % \
-                    (' ' * (indent + 1) * tab_size, thread.name, thread.tid, thread.nid, thread.state)
+            for t in threads:
+                print '%s"%s" tid=0x%x nid=%d %s' % (' ' * (indent + 1) * tab_size, t.name, t.tid, t.nid, t.state),
+                if t.state_detail is not None:
+                    print '(%s)' % t.state_detail, 
+                if t.blocked_id is not None:
+                    print '0x%x (%s)' % (t.blocked_id, t.blocked_class),
+                print 
             print
         else:
             frame, children = a, b
