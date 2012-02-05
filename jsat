@@ -10,6 +10,22 @@ from sys import stderr
 tab_size = 4
 
 class StackTrace(object): pass
+class ThreadDetails(object): pass
+
+class ThreadStatus(object):
+    def __init__(self):
+        self.java_status = '(native)'
+        self.java_status_detail = None
+        self.blocked_id = None
+        self.blocked_class = None
+        self.os_status = None
+        self.wchan = None
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+    def __hash__(self): return hash(frozenset(self.__dict__.iteritems()))
 
 def build_stacks(jstack, status_dict):
     res = []
@@ -21,28 +37,27 @@ def build_stacks(jstack, status_dict):
         mo_head = re.search(r'^"([^"]+)".*tid=(0x[0-9a-f]+).*nid=(0x[0-9a-f]+)', line)
         mo_frame = re.search(r'^\tat (.+)', line)
         mo_state = re.search(r'java.lang.Thread.State: ([A-Z_]+)(?: \(([^)]+)\))?', line)
-        mo_blocked = re.search(r'- [^()<>]+ <0x([^>]+)> \(a ([^)]+)\)', line)
+        mo_blocked = re.search(r'- [^<>]+<0x([^>]+)> +\(a ([^)]+)\)', line)
         if mo_head is not None:
             if curr is not None: add_st(curr)
             st = StackTrace()
-            st.name = mo_head.group(1)
-            st.tid = int(mo_head.group(2), 16)
-            st.nid = int(mo_head.group(3), 16)
+            st.details = ThreadDetails()
+            st.details.name = mo_head.group(1)
+            st.details.tid = int(mo_head.group(2), 16)
+            st.details.nid = int(mo_head.group(3), 16)
             st.frames = []
-            st.state = ''
-            st.state_detail = None
-            st.blocked_id = None
-            st.os_status, st.wchan = status_dict.get(st.nid) 
+            st.status = ThreadStatus()
+            st.status.os_status, st.status.wchan = status_dict.get(st.details.nid) 
             curr = st
         elif mo_frame is not None:
             curr.frames.append(mo_frame.group(1))
         elif mo_state is not None:
-            curr.state = mo_state.group(1) 
-            curr.state_detail = mo_state.group(2)
+            curr.status.java_status = mo_state.group(1) 
+            curr.status.java_status_detail = mo_state.group(2)
         elif mo_blocked is not None:
-            if curr.state in ['WAITING', 'TIMED_WAITING', 'BLOCKED'] and len(curr.frames) == 1:
-                curr.blocked_id = int(mo_blocked.group(1), 16)
-                curr.blocked_class = mo_blocked.group(2) 
+            if curr.status.java_status in ['WAITING', 'TIMED_WAITING', 'BLOCKED'] and len(curr.frames) == 1:
+                curr.status.blocked_id = int(mo_blocked.group(1), 16)
+                curr.status.blocked_class = mo_blocked.group(2) 
     if mo_head is not None: add_st(curr)
     return res
 
@@ -64,7 +79,7 @@ def get_status_dict(pid):
             try:
                 wchan = open('/proc/%d/task/%s/wchan' % (pid, lwp)).read()
                 stat_data = open('/proc/%d/task/%s/stat' % (pid, lwp)).read()
-                # Position 3h in /proc/<pid>/task/<lwp>/stat is stack pointer
+                # Position 3h in /proc/<pid>/task/<lwp>/stat is process status
                 status = stat_data.split()[2]
                 yield int(lwp), (status, wchan)
             except IOError, e:
@@ -79,7 +94,7 @@ def build_frame_tree(st):
         if frames:
             process_frames(frame_dict.setdefault(frames[0], {}), frames[1:], stack)
         else:
-            frame_dict.setdefault('k', []).append(stack)
+            frame_dict.setdefault(stack.status, []).append(stack)
     roots = {}
     for stack in st:
         if not stack.frames:
@@ -89,25 +104,36 @@ def build_frame_tree(st):
     
 def print_frame_tree(x, indent = 0):
     for a, b in sorted(x.items()):
-        if a == 'k':
-            threads = b
-            for t in threads:
-                print '%s"%s" tid=0x%x nid=%d %s' % (' ' * (indent + 1) * tab_size, t.name, t.tid, t.nid, t.state),
-                if t.state_detail is not None:
-                    print '(%s)' % t.state_detail, 
-                if t.blocked_id is not None:
-                    print '0x%x (%s)' % (t.blocked_id, t.blocked_class),
-                print t.os_status, t.wchan,
-                print 
-            print
+        if isinstance(a, ThreadStatus):
+            status, threads = a, b
+            print_thread_status(status, indent)
+            for t in threads: print_thread_details(t.details, indent)
+            print 
         else:
             frame, children = a, b
-            print '%s- %s' % (' ' * indent * tab_size, frame)
-            if len(children) > 1:
-                new_indent = indent + 1
-            else:
-                new_indent = indent
+            print_frame(frame, indent)
+            if len(children) > 1: new_indent = indent + 1
+            else: new_indent = indent
             print_frame_tree(children, new_indent)
+
+def print_thread_details(details, indent):
+    print '%s"%s" tid=0x%x nid=%d' % (get_indent(indent + 1), details.name, details.tid, details.nid)
+
+def print_thread_status(st, indent):
+    detail_str = ''
+    if st.java_status_detail is not None:
+        detail_str = '(%s)' % st.java_status_detail
+    blocked_id_str = ''
+    blocked_class_str = ''
+    if st.blocked_id is not None:
+        blocked_id_str = '0x%x' % st.blocked_id
+        blocked_class_str = '(on %s)' % st.blocked_class
+    print '%s+ %s %s %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, \
+        blocked_id_str, blocked_class_str, st.os_status, st.wchan)
+    
+def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame)
+
+def get_indent(level): return ' ' * (level * tab_size)
     
 def error_exit(msg):
     print >> sys.stderr, '%s: %s' % (sys.argv[0], msg)
