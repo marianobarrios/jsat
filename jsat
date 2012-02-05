@@ -109,7 +109,7 @@ def build_frame_tree(st):
         if frames:
             process_frames(frame_dict.setdefault(frames[0], {}), frames[1:], stack)
         else:
-            frame_dict.setdefault(stack.status, []).append(stack)
+            frame_dict.setdefault(stack.status, []).append(stack.details)
     roots = {}
     for stack in st:
         if not stack.frames:
@@ -127,7 +127,7 @@ def print_frame_tree(x, max_threads, indent = 0):
                 if thread_count == max_threads:
                     print '%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads)
                     break
-                print_thread_details(t.details, indent + 1)
+                print_thread_details(t, indent + 1)
                 thread_count += 1
             print 
         else:
@@ -172,7 +172,7 @@ def error_exit(msg):
 def parse_args():
     parser = OptionParser('usage: %prog [options] pid\nPretty print java stack traces')
     parser.add_option("-n", type = 'int', dest = "max_threads", default = '10', 
-        help = 'maximum number of threads printed for each group. -1 shows all. Default: %default')
+        help = 'maximum number of threads printed for each group. "-1" shows all. Default: %default')
     options, args = parser.parse_args()
     if len(args) != 1:
         parser.error('A java pid must be supplied')
