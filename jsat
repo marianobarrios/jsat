@@ -9,12 +9,20 @@ from sys import stderr
 
 tab_size = 4
 
+os_status_desc = {
+    'D': "uninterruptible sleep",
+    'R': "runnable",
+    'S': "interruptible sleep",
+    'T': "stopped",
+    'Z': "zombie",
+}
+
 class StackTrace(object): pass
 class ThreadDetails(object): pass
 
 class ThreadStatus(object):
     def __init__(self):
-        self.java_status = '(native)'
+        self.java_status = None
         self.java_status_detail = None
         self.blocked_id = None
         self.blocked_class = None
@@ -133,13 +141,19 @@ def print_thread_status(st, indent):
     blocked_id_str = ''
     blocked_class_str = ''
     if st.blocked_id is not None:
-        blocked_id_str = '0x%x' % st.blocked_id
-        blocked_class_str = '(on %s)' % st.blocked_class
+        blocked_id_str = 'on 0x%x' % st.blocked_id
+        blocked_class_str = '(a %s)' % st.blocked_class
     wchan = ''
     if st.wchan is not None:
-        wchan = '%s' % st.wchan
-    print '%s+ %s %s %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, \
-        blocked_id_str, blocked_class_str, st.os_status, wchan)
+        wchan = 'in %s()' % st.wchan
+    if st.java_status is not None:
+        # Skipping native threads
+        print '%s+ %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, blocked_id_str, blocked_class_str)
+    print '%s+' % get_indent(indent),
+    if st.os_status is not None:
+        print '%s (%s) %s' % (st.os_status, os_status_desc[st.os_status], wchan)
+    else:
+        print '<unknown os status>'
     
 def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame)
 
