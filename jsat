@@ -117,22 +117,28 @@ def build_frame_tree(st):
         process_frames(roots, stack.frames, stack)
     return roots
     
-def print_frame_tree(x, indent = 0):
+def print_frame_tree(x, max_threads, indent = 0):
     for a, b in sorted(x.items()):
         if isinstance(a, ThreadStatus):
             status, threads = a, b
             print_thread_status(status, indent)
-            for t in threads: print_thread_details(t.details, indent)
+            thread_count = 0
+            for t in threads:
+                if thread_count == max_threads:
+                    print '%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads)
+                    break
+                print_thread_details(t.details, indent + 1)
+                thread_count += 1
             print 
         else:
             frame, children = a, b
             print_frame(frame, indent)
             if len(children) > 1: new_indent = indent + 1
             else: new_indent = indent
-            print_frame_tree(children, new_indent)
+            print_frame_tree(children, max_threads, new_indent)
 
 def print_thread_details(details, indent):
-    print '%s"%s" tid=0x%x nid=%d' % (get_indent(indent + 1), details.name, details.tid, details.nid)
+    print '%s"%s" tid=0x%x nid=%d' % (get_indent(indent), details.name, details.tid, details.nid)
 
 def print_thread_status(st, indent):
     detail_str = ''
@@ -165,6 +171,8 @@ def error_exit(msg):
 
 def parse_args():
     parser = OptionParser('usage: %prog [options] pid\nPretty print java stack traces')
+    parser.add_option("-n", type = 'int', dest = "max_threads", default = '10', 
+        help = 'maximum number of threads printed for each group. -1 shows all. Default: %default')
     options, args = parser.parse_args()
     if len(args) != 1:
         parser.error('A java pid must be supplied')
@@ -177,6 +185,6 @@ if __name__ == '__main__':
         stacks = run_command('jstack', [str(pid)])
         status = get_status_dict(pid)
         roots = build_frame_tree(build_stacks(stacks, status))
-        print_frame_tree(roots)
+        print_frame_tree(roots, options.max_threads)
     except EnvironmentError, e:
         error_exit(e)
