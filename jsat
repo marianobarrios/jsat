@@ -3,14 +3,15 @@
 import sys
 import subprocess
 import re
+import os
 from optparse import OptionParser
+from sys import stderr
 
 tab_size = 4
 
 class StackTrace(object): pass
 
-def get_jstack(pid):
-    jstack = run_command('jstack', [str(pid)])
+def build_stacks(jstack, status_dict):
     res = []
     def add_st(st):
         st.frames = list(reversed(st.frames))
@@ -31,6 +32,7 @@ def get_jstack(pid):
             st.state = ''
             st.state_detail = None
             st.blocked_id = None
+            st.os_status, st.wchan = status_dict.get(st.nid) 
             curr = st
         elif mo_frame is not None:
             curr.frames.append(mo_frame.group(1))
@@ -55,6 +57,23 @@ def run_command(cmd, args):
         else: raise
     return stdout
 
+def get_status_dict(pid):
+    lwp_list = os.listdir('/proc/%d/task' % pid)
+    def wchan_gen():
+        for lwp in lwp_list:
+            try:
+                wchan = open('/proc/%d/task/%s/wchan' % (pid, lwp)).read()
+                stat_data = open('/proc/%d/task/%s/stat' % (pid, lwp)).read()
+                # Position 3h in /proc/<pid>/task/<lwp>/stat is stack pointer
+                status = stat_data.split()[2]
+                yield int(lwp), (status, wchan)
+            except IOError, e:
+                # Accounting for the fact that a thread can terminate between the moment we
+                # ask for the list (directory) and we try to read the file
+                if e.errno == 2: print >> stderr, 'WARN: Missing task: %s' % lwp
+                else: raise
+    return dict(wchan_gen())
+
 def build_frame_tree(st):
     def process_frames(frame_dict, frames, stack):
         if frames:
@@ -78,6 +97,7 @@ def print_frame_tree(x, indent = 0):
                     print '(%s)' % t.state_detail, 
                 if t.blocked_id is not None:
                     print '0x%x (%s)' % (t.blocked_id, t.blocked_class),
+                print t.os_status, t.wchan,
                 print 
             print
         else:
@@ -104,7 +124,8 @@ def parse_args():
 if __name__ == '__main__':
     pid, options = parse_args()
     try:
-        roots = build_frame_tree(get_jstack(pid))
+        stacks = run_command('jstack', [str(pid)])
+        roots = build_frame_tree(build_stacks(stacks, get_status_dict(pid)))
         print_frame_tree(roots)
     except EnvironmentError, e:
         error_exit(e)
