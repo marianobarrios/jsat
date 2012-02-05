@@ -47,7 +47,11 @@ def build_stacks(jstack, status_dict):
             st.details.nid = int(mo_head.group(3), 16)
             st.frames = []
             st.status = ThreadStatus()
-            st.status.os_status, st.status.wchan = status_dict.get(st.details.nid) 
+            status = status_dict.get(st.details.nid)
+            if status is not None:
+                st.status.os_status, st.status.wchan = status
+            else:
+                print >> stderr, 'WARN: Could not obtain OS status for thread %d' % st.details.nid  
             curr = st
         elif mo_frame is not None:
             curr.frames.append(mo_frame.group(1))
@@ -79,8 +83,11 @@ def get_status_dict(pid):
             try:
                 wchan = open('/proc/%d/task/%s/wchan' % (pid, lwp)).read()
                 stat_data = open('/proc/%d/task/%s/stat' % (pid, lwp)).read()
-                # Position 3h in /proc/<pid>/task/<lwp>/stat is process status
+                # Third position is process status
                 status = stat_data.split()[2]
+                if re.match('[0-9].+', wchan) is not None or wchan == '_stext':
+                    # Discarding numeric channels (running processes or old kernels)
+                    wchan = None
                 yield int(lwp), (status, wchan)
             except IOError, e:
                 # Accounting for the fact that a thread can terminate between the moment we
@@ -128,8 +135,11 @@ def print_thread_status(st, indent):
     if st.blocked_id is not None:
         blocked_id_str = '0x%x' % st.blocked_id
         blocked_class_str = '(on %s)' % st.blocked_class
+    wchan = ''
+    if st.wchan is not None:
+        wchan = '%s' % st.wchan
     print '%s+ %s %s %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, \
-        blocked_id_str, blocked_class_str, st.os_status, st.wchan)
+        blocked_id_str, blocked_class_str, st.os_status, wchan)
     
 def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame)
 
@@ -151,8 +161,8 @@ if __name__ == '__main__':
     pid, options = parse_args()
     try:
         stacks = run_command('jstack', [str(pid)])
-        roots = build_frame_tree(build_stacks(stacks, get_status_dict(pid)))
+        status = get_status_dict(pid)
+        roots = build_frame_tree(build_stacks(stacks, status))
         print_frame_tree(roots)
     except EnvironmentError, e:
         error_exit(e)
-            
