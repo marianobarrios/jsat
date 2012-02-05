@@ -17,8 +17,17 @@ os_status_desc = {
     'Z': "zombie",
 }
 
-class StackTrace(object): pass
-class ThreadDetails(object): pass
+class StackTrace(object):
+    def __init__(self):
+        self.details = None
+        self.frames = []
+        self.status = ThreadStatus()
+        
+class ThreadDetails(object):
+    def __init__(self, name, tid, nid):
+        self.name = name
+        self.tid = tid
+        self.nid = nid
 
 class ThreadStatus(object):
     def __init__(self):
@@ -49,12 +58,10 @@ def build_stacks(jstack, status_dict):
         if mo_head is not None:
             if curr is not None: add_st(curr)
             st = StackTrace()
-            st.details = ThreadDetails()
-            st.details.name = mo_head.group(1)
-            st.details.tid = int(mo_head.group(2), 16)
-            st.details.nid = int(mo_head.group(3), 16)
-            st.frames = []
-            st.status = ThreadStatus()
+            st.details = ThreadDetails(
+                name = mo_head.group(1), 
+                tid = int(mo_head.group(2), 16), 
+                nid = int(mo_head.group(3), 16)) 
             status = status_dict.get(st.details.nid)
             if status is not None:
                 st.status.os_status, st.status.wchan = status
