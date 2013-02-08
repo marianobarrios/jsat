@@ -27,8 +27,9 @@ class StackTrace(object):
         self.status = ThreadStatus()
         
 class ThreadDetails(object):
-    def __init__(self, name, tid, nid):
+    def __init__(self, name, prio, tid, nid):
         self.name = name
+        self.prio = prio
         self.tid = tid
         self.nid = nid
 
@@ -129,7 +130,7 @@ def build_stacks(jstack, status_dict):
         res.append(st)
     curr = None
     for line in jstack.split('\n'):
-        mo_head = re.search(r'^"([^"]+)".*tid=(0x[0-9a-f]+).*nid=(0x[0-9a-f]+)', line)
+        mo_head = re.search(r'^"([^"]+)".*prio=([0-9]+).*tid=(0x[0-9a-f]+).*nid=(0x[0-9a-f]+)', line)
         mo_frame = re.search(r'^\tat (.+)', line)
         mo_state = re.search(r'java.lang.Thread.State: ([A-Z_]+)(?: \(([^)]+)\))?', line)
         mo_blocked = re.search(r'- [^<>]+<0x([^>]+)> +\(a ([^)]+)\)', line)
@@ -138,8 +139,9 @@ def build_stacks(jstack, status_dict):
             st = StackTrace()
             st.details = ThreadDetails(
                 name = mo_head.group(1), 
-                tid = int(mo_head.group(2), 16), 
-                nid = int(mo_head.group(3), 16)) 
+                prio = int(mo_head.group(2)),
+                tid = int(mo_head.group(3), 16), 
+                nid = int(mo_head.group(4), 16)) 
             status = status_dict.get(st.details.nid)
             if status is not None:
                 st.status.os_status, st.status.wchan = status
@@ -197,6 +199,7 @@ def print_frame_tree(x, max_threads, indent = 0):
             status, threads = a, b
             print_thread_status(status, indent)
             thread_count = 0
+            print "%s  Threads:" % get_indent(indent)
             for t in threads:
                 if thread_count == max_threads:
                     print '%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads)
@@ -212,7 +215,7 @@ def print_frame_tree(x, max_threads, indent = 0):
             print_frame_tree(children, max_threads, new_indent)
 
 def print_thread_details(details, indent):
-    print '%s"%s" tid=0x%x nid=%d' % (get_indent(indent), details.name, details.tid, details.nid)
+    print '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid)
 
 def print_thread_status(st, indent):
     detail_str = ''
@@ -228,12 +231,12 @@ def print_thread_status(st, indent):
         wchan = 'in %s()' % st.wchan
     if st.java_status is not None:
         # Skipping native threads
-        print '%s+ %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, blocked_id_str, blocked_class_str)
-    print '%s+' % get_indent(indent),
+        print '%s+ %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, blocked_id_str, blocked_class_str),
+    #print '%s+' % get_indent(indent),
     if st.os_status is not None:
-        print '%s (%s) %s' % (st.os_status, os_status_desc[st.os_status], wchan)
+        print '[%s (%s) %s]' % (st.os_status, os_status_desc[st.os_status], wchan)
     else:
-        print '<unknown os status>'
+        print '[unknown os status]'
     
 def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame)
 
