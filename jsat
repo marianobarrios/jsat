@@ -73,8 +73,8 @@ def socket_path(pid):
     return path
             
 def start_server(pid, socket):
-    print_debug("Socket file does not exist. Starting server at " + socket)
-    touch('/tmp/.attach_pid%d' % pid)
+    print_debug("Socket file does not exist. Asking process to start server...")
+    touch('/proc/%d/cwd/.attach_pid%d' % (pid, pid))
     os.kill(pid, signal.SIGQUIT)
     if not wait_for_existence(socket, wait = 0.05, timeout = 1):
         raise ProcessError('Cannot attach: JVM not responding (or not a Java process)')
@@ -121,7 +121,7 @@ def dump(socket_file):
         print_debug("Asked for dump, waiting for reply...")
         res = read_all(sock)
         status, dump = string.split(res, "\n", 1)
-        print_debug("Status read: %s" % status)
+        print_debug("Reply read. Status: %s." % status)
         if status != "0":
             raise Exception("Invalid status: " + status)
         return dump
