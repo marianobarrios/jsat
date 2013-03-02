@@ -57,14 +57,14 @@ class ProcessError(Exception):
     pass
     
 def attach_and_dump(pid):
+    # If necessary, downgrade to JVM user and group, so it accepts the connection
+    stat = os.stat('/proc/%d' % pid)
+    print_debug("Checking process user and group: %s,%s" % (stat.st_uid, stat.st_gid))
+    os.setgid(stat.st_gid)
+    os.setuid(stat.st_uid)
     socket = socket_path(pid)
     if not exists(socket):
         start_server(pid, socket)
-    # If necessary, downgrade to JVM user and group, so it accepts the connection
-    stat = os.stat(socket)
-    print_debug("Checking socket user and group: %s,%s" % (stat.st_uid, stat.st_gid))
-    os.setgid(stat.st_gid)
-    os.setuid(stat.st_uid)
     return dump(socket)
     
 def socket_path(pid): 
