@@ -8,8 +8,13 @@ import signal
 import string
 import time
 from optparse import OptionParser
-from sys import stderr
 
+def print_err(string): print >> sys.stderr, string
+
+def print_debug(string): 
+    if verbose:
+        print_err(string)
+          
 tab_size = 4
 
 os_status_desc = {
@@ -48,31 +53,40 @@ class ThreadStatus(object):
             return False
     def __hash__(self): return hash(frozenset(self.__dict__.iteritems()))
 
+class ProcessError(Exception):
+    pass
+    
 def attach_and_dump(pid):
     socket = socket_path(pid)
     if not exists(socket):
         start_server(pid, socket)
-    stat = os.stat(socket)
     # If necessary, downgrade to JVM user and group, so it accepts the connection
+    stat = os.stat(socket)
+    print_debug("Checking socket user and group: %s,%s" % (stat.st_uid, stat.st_gid))
     os.setgid(stat.st_gid)
     os.setuid(stat.st_uid)
     return dump(socket)
     
-def socket_path(pid): return '/tmp/.java_pid%d' % pid
+def socket_path(pid): 
+    path = '/tmp/.java_pid%d' % pid
+    print_debug("Socket path: %s" % path)
+    return path
             
 def start_server(pid, socket):
-    print "Socket file does not exist. Starting server at " + socket
+    print_debug("Socket file does not exist. Starting server at " + socket)
     touch('/tmp/.attach_pid%d' % pid)
     os.kill(pid, signal.SIGQUIT)
     if not wait_for_existence(socket, wait = 0.05, timeout = 1):
-        raise Exception('Cannot attach: JVM not responding (or not a Java process)')
+        raise ProcessError('Cannot attach: JVM not responding (or not a Java process)')
     
 def touch(path):
+    print_debug("Touching " + path)
     f = open(path, 'w')
     try: f.write('')
     finally: f.close()
    
 def wait_for_existence(path, wait, timeout):
+    print_debug("Waiting for existence of %s..." % path)
     t = 0
     while t < timeout:
         if exists(path):
@@ -80,6 +94,7 @@ def wait_for_existence(path, wait, timeout):
         else:
             t += wait
             time.sleep(wait)
+    print_debug("Wait timed out after %.2f seconds" % timeout) 
     return False
 
 def exists(path):
@@ -96,14 +111,17 @@ def dump(socket_file):
     protocol_version = '1'
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(socket_file)
+    print_debug("Connected to socket")
     try:
         send_string(sock, protocol_version)
         send_string(sock, 'threaddump')
         args = ['', '','  ']
         for arg in args:
             send_string(sock, arg)
+        print_debug("Asked for dump, waiting for reply...")
         res = read_all(sock)
         status, dump = string.split(res, "\n", 1)
+        print_debug("Status read: %s" % status)
         if status != "0":
             raise Exception("Invalid status: " + status)
         return dump
@@ -146,7 +164,7 @@ def build_stacks(jstack, status_dict):
             if status is not None:
                 st.status.os_status, st.status.wchan = status
             else:
-                print >> stderr, 'WARN: Could not obtain OS status for thread %d' % st.details.nid  
+                print_err('WARN: Could not obtain OS status for thread %d' % st.details.nid)  
             curr = st
         elif mo_frame is not None:
             curr.frames.append(mo_frame.group(1))
@@ -176,7 +194,7 @@ def get_status_dict(pid):
             except IOError, e:
                 # Accounting for the fact that a thread can terminate between the moment we
                 # ask for the list (directory) and we try to read the file
-                if e.errno == 2: print >> stderr, 'WARN: Missing task: %s' % lwp
+                if e.errno == 2: print_err('WARN: Missing task: %s' % lwp)
                 else: raise
     return dict(wchan_gen())
 
@@ -242,26 +260,32 @@ def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame
 
 def get_indent(level): return ' ' * (level * tab_size)
     
-def error_exit(e):
-    print >> sys.stderr, '%s: %s' % (sys.argv[0], e.strerror)
+def error_exit(message):
+    print_err('%s: %s' % (sys.argv[0], message))
     sys.exit(1)
 
 def parse_args():
     parser = OptionParser('usage: %prog [options] pid\nPretty print java stack traces')
     parser.add_option("-n", type = 'int', dest = "max_threads", default = '10', 
         help = 'maximum number of threads printed for each group. "-1" shows all. Default: %default')
+    parser.add_option('-v', action = 'store_true', dest = 'verbose', help = "activate verbose mode")
     options, args = parser.parse_args()
     if len(args) != 1:
         parser.error('A java pid must be supplied')
     pid = int(args[0])
     return pid, options
 
+verbose = None
+
 if __name__ == '__main__':
     pid, options = parse_args()
+    verbose = options.verbose
     try:
         stacks = attach_and_dump(pid)
         status = get_status_dict(pid)
         roots = build_frame_tree(build_stacks(stacks, status))
         print_frame_tree(roots, options.max_threads)
     except EnvironmentError, e:
-        error_exit(e)
+        error_exit(e.strerror)
+    except ProcessError, e:
+        error_exit(e.message)
