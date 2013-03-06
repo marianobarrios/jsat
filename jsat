@@ -254,11 +254,10 @@ def print_thread_status(st, indent):
     wchan = ''
     if st.wchan is not None:
         wchan = 'in %s()' % st.wchan
+    print colored('%s+' % get_indent(indent), status_color),
     if st.java_status is not None:
         # Skipping native threads
-        print colored(
-            '%s+ %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, blocked_id_str, blocked_class_str),
-            status_color),
+        print colored('%s %s %s %s' % (st.java_status, detail_str, blocked_id_str, blocked_class_str), status_color),
     #print '%s+' % get_indent(indent),
     if st.os_status is not None:
         print colored('[%s (%s) %s]:' % (st.os_status, os_status_desc[st.os_status], wchan), status_color)
