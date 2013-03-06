@@ -210,14 +210,16 @@ def build_frame_tree(st):
             stack.frames = ['<no stack trace information>']
         process_frames(roots, stack.frames, stack)
     return roots
-    
+  
+def colored(string, color_code):
+    return "\033[" + str(color_code) + "m" + string + "\033[39m"
+      
 def print_frame_tree(x, max_threads, indent = 0):
     for a, b in sorted(x.items()):
         if isinstance(a, ThreadStatus):
             status, threads = a, b
             print_thread_status(status, indent)
             thread_count = 0
-            print "%s  Threads:" % get_indent(indent)
             for t in threads:
                 if thread_count == max_threads:
                     print '%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads)
@@ -233,7 +235,12 @@ def print_frame_tree(x, max_threads, indent = 0):
             print_frame_tree(children, max_threads, new_indent)
 
 def print_thread_details(details, indent):
-    print '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid)
+    print colored(
+        '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid), 
+        threads_color)
+
+status_color = 34
+threads_color = 37
 
 def print_thread_status(st, indent):
     detail_str = ''
@@ -249,12 +256,14 @@ def print_thread_status(st, indent):
         wchan = 'in %s()' % st.wchan
     if st.java_status is not None:
         # Skipping native threads
-        print '%s+ %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, blocked_id_str, blocked_class_str),
+        print colored(
+            '%s+ %s %s %s %s' % (get_indent(indent), st.java_status, detail_str, blocked_id_str, blocked_class_str),
+            status_color),
     #print '%s+' % get_indent(indent),
     if st.os_status is not None:
-        print '[%s (%s) %s]' % (st.os_status, os_status_desc[st.os_status], wchan)
+        print colored('[%s (%s) %s]:' % (st.os_status, os_status_desc[st.os_status], wchan), status_color)
     else:
-        print '[unknown os status]'
+        print colored('[unknown os status]:', status_color)
     
 def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame)
 
