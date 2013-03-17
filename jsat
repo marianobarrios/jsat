@@ -275,7 +275,14 @@ def error_exit(message):
     sys.exit(1)
 
 def parse_args():
-    parser = OptionParser('usage: %prog [options] pid\nPretty print java stack traces')
+    parser = OptionParser(
+        usage = 
+            "usage: %prog [options] pid\n\n" + 
+            "Connect to a JVM and dump the stack traces.\n" +
+            "The dump from the JVM is merged with OS information regarding thread states.",
+        epilog = 
+            "Note that threads are displayed from top to bottom (this is the opposite to the usual Java style) " +
+            "and are also grouped by the common frames, which are printed only once.")
     parser.add_option("-n", type = 'int', dest = "max_threads", default = '10', 
         help = 'maximum number of threads printed for each group. "-1" shows all. Default: %default')
     parser.add_option('-v', action = 'store_true', dest = 'verbose', help = "activate verbose mode")
