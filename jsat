@@ -74,10 +74,27 @@ def socket_path(pid):
             
 def start_server(pid, socket):
     print_debug("Socket file does not exist. Asking process to start server...")
-    touch('/proc/%d/cwd/.attach_pid%d' % (pid, pid))
-    os.kill(pid, signal.SIGQUIT)
-    if not wait_for_existence(socket, wait = 0.05, timeout = 1):
-        raise ProcessError('Cannot attach: JVM not responding (or not a Java process)')
+    created_attach_file = None
+    try:
+        try:
+            af = '/proc/%d/cwd/.attach_pid%d' % (pid, pid)
+            touch(af)
+            created_attach_file = af
+        except IOError, e:
+            if e.errno == 13: # permission denied
+                print_debug("Cannot create attach file in process working directory. Trying with /tmp")
+                af = '/tmp/.attach_pid%d' % pid 
+                touch(af)
+                created_attach_file = af
+            else:
+                raise
+        os.kill(pid, signal.SIGQUIT)
+        if not wait_for_existence(socket, wait = 0.05, timeout = 1):
+            raise ProcessError('Cannot attach: JVM not responding (or not a Java process)')
+    finally:
+        if created_attach_file:
+            print_debug("Removing attach file: %s" % created_attach_file)
+            os.remove(created_attach_file)
     
 def touch(path):
     print_debug("Touching " + path)
