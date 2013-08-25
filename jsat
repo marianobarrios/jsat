@@ -170,7 +170,8 @@ def build_stacks(jstack, status_dict):
         mo_state = re.search(r'java.lang.Thread.State: ([A-Z_]+)(?: \(([^)]+)\))?', line)
         mo_blocked = re.search(r'- [^<>]+<0x([^>]+)> +\(a ([^)]+)\)', line)
         if mo_head is not None:
-            if curr is not None: add_st(curr)
+            if curr is not None: 
+                add_st(curr)
             st = StackTrace()
             st.details = ThreadDetails(
                 name = mo_head.group(1), 
@@ -192,7 +193,8 @@ def build_stacks(jstack, status_dict):
             if curr.status.java_status in ['WAITING', 'TIMED_WAITING', 'BLOCKED'] and len(curr.frames) == 1:
                 curr.status.blocked_id = int(mo_blocked.group(1), 16)
                 curr.status.blocked_class = mo_blocked.group(2) 
-    if mo_head is not None: add_st(curr)
+    if curr is not None: 
+        add_st(curr)
     return res
 
 def get_status_dict(pid):
