@@ -18,11 +18,16 @@ def print_debug(string):
 tab_size = 4
 
 os_status_desc = {
-    'D': "uninterruptible sleep",
+    'D': "uninterruptible",
     'R': "runnable",
-    'S': "interruptible sleep",
+    'S': "interruptible",
     'T': "stopped",
+    't': "traced",
     'Z': "zombie",
+    'X': "dead",
+    'K': "wakekill",
+    'W': "waking",
+    'P': "parked",
 }
 
 class StackTrace(object):
