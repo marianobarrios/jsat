@@ -303,18 +303,29 @@ def parse_args():
         usage = 
             "usage: %prog [options] pid\n\n" + 
             "Connect to a JVM and dump the stack traces.\n" +
-            "The dump from the JVM is merged with OS information regarding thread states.",
-        epilog = 
-            "Note that threads are displayed from top to bottom (this is the opposite to the usual Java style) " +
-            "and are also grouped by the common frames, which are printed only once.")
+            "The dump from the JVM is merged with OS information regarding thread states.")
+    parser.add_option('-v', action = 'store_true', dest = 'verbose', help = "activate verbose mode")
+    parser.add_option('-g', action = 'store_true', dest = 'group', 
+        help = "group stack that share frames; when this option is enabled the frames are displayed from top " +
+        "to bottom (this is the opposite to the usual Java style)")
     parser.add_option("-n", type = 'int', dest = "max_threads", default = '10', 
         help = 'maximum number of threads printed for each group. "-1" shows all. Default: %default')
-    parser.add_option('-v', action = 'store_true', dest = 'verbose', help = "activate verbose mode")
     options, args = parser.parse_args()
     if len(args) != 1:
         parser.error('A java pid must be supplied')
     pid = int(args[0])
     return pid, options
+
+def print_stack(stack):
+    print_thread_details(stack.details, 0)
+    print_thread_status(stack.status, 0)
+    for frame in reversed(stack.frames):
+        print_frame(frame, 0)
+
+def print_stacks(stacks):
+    for stack in stacks:
+        print_stack(stack)
+        print
 
 verbose = None
 print_color = sys.stdout.isatty()
@@ -323,10 +334,14 @@ if __name__ == '__main__':
     pid, options = parse_args()
     verbose = options.verbose
     try:
-        stacks = attach_and_dump(pid)
+        raw_stacks = attach_and_dump(pid)
         status = get_status_dict(pid)
-        roots = build_frame_tree(build_stacks(stacks, status))
-        print_frame_tree(roots, options.max_threads)
+        stacks = build_stacks(raw_stacks, status)
+        if options.group:
+            roots = build_frame_tree(stacks)
+            print_frame_tree(roots, options.max_threads)
+        else:
+            print_stacks(stacks)
     except EnvironmentError, e:
         error_exit(e.strerror)
     except ProcessError, e:
