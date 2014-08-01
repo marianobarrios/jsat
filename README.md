@@ -1,15 +1,15 @@
 JSAT
 ====
 
-Jsat intends to improve over the usual JVM thread dump. It recognizes that, usually, groups of threads run very 
-similar code, and thus may share a few frames from the bottom of the stacks. Jsat prints stack frames hierarchically,
+Jsat reports information about Java threads. In addition to the data shown by jstack, jsat uses information from the /proc 
+filesystem to show the operating system process status of each thread.
+This can be especially useful with "Runnable" threads, which can actually be blocked during I/O operations.
+Additionally, Jsat intends to improve over the usual JVM thread dump format. It recognizes that, usually, groups of threads run very 
+similar code, and thus may share a few frames from the bottom of the stacks. Jsat optionally prints stack frames hierarchically,
 minimizing repeated output.
-Additionally, information from /proc filesystem is collected regarding thread states. Along with JVM
-state, OS process state is displayed. This can be especially useful with "Runnable" threads, which can 
-actually be blocked during I/O operations.
 
-Sample output (from a running Cassandra database):
--------------------------------------------------
+Sample grouped output (from a running Cassandra database):
+---------------------------------------------------------
 
     - java.lang.Thread.run(Thread.java:662)
         - com.sun.jmx.remote.internal.ServerCommunicatorAdmin$Timeout.run(ServerCommunicatorAdmin.java:150)
