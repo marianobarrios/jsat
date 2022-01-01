@@ -74,8 +74,8 @@ class ProcessError(Exception):
 
 def attach_and_dump(pid):
     # If necessary, downgrade to JVM user and group, so it accepts the connection
-    stat = os.stat('/proc/%d' % pid)
-    print_debug("Checking process user and group: %s,%s" % (stat.st_uid, stat.st_gid))
+    stat = os.stat(f'/proc/{pid}')
+    print_debug(f"Checking process user and group: {stat.st_uid},{stat.st_gid}")
     os.setgid(stat.st_gid)
     os.setuid(stat.st_uid)
     socket = socket_path(pid)
@@ -85,8 +85,8 @@ def attach_and_dump(pid):
 
 
 def socket_path(pid):
-    path = '/tmp/.java_pid%d' % pid
-    print_debug("Socket path: %s" % path)
+    path = f'/tmp/.java_pid{pid}'
+    print_debug(f"Socket path: {path}")
     return path
 
 
@@ -95,13 +95,13 @@ def start_server(pid, socket):
     created_attach_file = None
     try:
         try:
-            af = '/proc/%d/cwd/.attach_pid%d' % (pid, pid)
+            af = f'/proc/{pid}/cwd/.attach_pid{pid}'
             touch(af)
             created_attach_file = af
         except IOError as e:
             if e.errno == 13:  # permission denied
                 print_debug("Cannot create attach file in process working directory. Trying with /tmp")
-                af = '/tmp/.attach_pid%d' % pid
+                af = f'/tmp/.attach_pid{pid}'
                 touch(af)
                 created_attach_file = af
             else:
@@ -111,7 +111,7 @@ def start_server(pid, socket):
             raise ProcessError('Cannot attach: JVM not responding (or not a Java process)')
     finally:
         if created_attach_file:
-            print_debug("Removing attach file: %s" % created_attach_file)
+            print_debug(f"Removing attach file: {created_attach_file}")
             os.remove(created_attach_file)
 
 
@@ -125,7 +125,7 @@ def touch(path):
 
 
 def wait_for_existence(path, wait, timeout):
-    print_debug("Waiting for existence of %s..." % path)
+    print_debug(f"Waiting for existence of {path}...")
     t = 0
     while t < timeout:
         if exists(path):
@@ -133,7 +133,7 @@ def wait_for_existence(path, wait, timeout):
         else:
             t += wait
             time.sleep(wait)
-    print_debug("Wait timed out after %.2f seconds" % timeout)
+    print_debug(f"Wait timed out after {timeout:.2f} seconds")
     return False
 
 
@@ -233,8 +233,8 @@ def get_status_dict(pid):
     def wchan_gen():
         for lwp in lwp_list:
             try:
-                wchan = open('/proc/%d/task/%s/wchan' % (pid, lwp)).read()
-                stat_data = open('/proc/%d/task/%s/stat' % (pid, lwp)).read()
+                wchan = open(f'/proc/{pid}/task/{lwp}/wchan').read()
+                stat_data = open(f'/proc/{pid}/task/{lwp}/stat').read()
                 # Third position is process status
 
                 # be careful because thread name in parentheses can contain spaces
@@ -286,7 +286,7 @@ def print_frame_tree(x, max_threads, indent=0):
             thread_count = 0
             for t in threads:
                 if thread_count == max_threads:
-                    print('%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads))
+                    print(f'{get_indent(indent + 1)}{len(threads) - max_threads} more threads...')
                     break
                 print_thread_details(t, indent + 1)
                 thread_count += 1
@@ -303,7 +303,7 @@ def print_frame_tree(x, max_threads, indent=0):
 
 def print_thread_details(details, indent):
     print(colored(
-        '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid),
+        f'{get_indent(indent)}{details.name} prio={details.prio} tid=0x{details.tid:0x} nid={details.nid}',
         threads_color))
 
 
@@ -314,34 +314,35 @@ threads_color = 37
 def print_thread_status(st, indent):
     detail_str = ''
     if st.java_status_detail is not None:
-        detail_str = '(%s)' % st.java_status_detail
+        detail_str = f'({st.java_status_detail})'
     blocked_id_str = ''
     blocked_class_str = ''
     if st.blocked_id is not None:
-        blocked_id_str = 'on 0x%x' % st.blocked_id
-        blocked_class_str = '(a %s)' % st.blocked_class
+        blocked_id_str = f'on 0x{st.blocked_id:x}'
+        blocked_class_str = f'(a {st.blocked_class})'
     wchan = ''
     if st.wchan is not None:
-        wchan = 'in %s()' % st.wchan
+        wchan = f'in {st.wchan}()'
     print(colored('%s+' % get_indent(indent), status_color), end='')
     if st.java_status is not None:
         # Skipping native threads
-        print(colored('%s %s %s %s' % (st.java_status, detail_str, blocked_id_str, blocked_class_str), status_color),
-              end='')
+        print(colored(f'{st.java_status} {detail_str} {blocked_id_str} {blocked_class_str}', status_color), end='')
     if st.os_status is not None:
-        print(colored('[%s (%s) %s]:' % (st.os_status, os_status_desc[st.os_status], wchan), status_color))
+        print(colored(f'[{st.os_status} ({os_status_desc[st.os_status]}) {wchan}]:', status_color))
     else:
         print(colored('[unknown os status]:', status_color))
 
 
-def print_frame(frame, indent): print('%s- %s' % (' ' * indent * tab_size, frame))
+def print_frame(frame, indent):
+    print(f'{" " * indent * tab_size}- {frame}')
 
 
-def get_indent(level): return ' ' * (level * tab_size)
+def get_indent(level):
+    return ' ' * (level * tab_size)
 
 
 def error_exit(message):
-    print_err('%s: %s' % (sys.argv[0], message))
+    print_err(f'{sys.argv[0]}: {message}')
     sys.exit(1)
 
 
