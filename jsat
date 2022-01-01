@@ -1,15 +1,14 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 import sys
 import re
 import os
 import socket
-import signal 
-import string
+import signal
 import time
 from optparse import OptionParser
 
-def print_err(string): print >> sys.stderr, string
+def print_err(string): print(string, file=sys.stderr)
 
 def print_debug(string): 
     if verbose:
@@ -56,7 +55,7 @@ class ThreadStatus(object):
             return self.__dict__ == other.__dict__
         else:
             return False
-    def __hash__(self): return hash(frozenset(self.__dict__.iteritems()))
+    def __hash__(self): return hash(frozenset(self.__dict__.items()))
 
 class ProcessError(Exception):
     pass
@@ -85,7 +84,7 @@ def start_server(pid, socket):
             af = '/proc/%d/cwd/.attach_pid%d' % (pid, pid)
             touch(af)
             created_attach_file = af
-        except IOError, e:
+        except IOError as e:
             if e.errno == 13: # permission denied
                 print_debug("Cannot create attach file in process working directory. Trying with /tmp")
                 af = '/tmp/.attach_pid%d' % pid 
@@ -142,7 +141,7 @@ def dump(socket_file):
             send_string(sock, arg)
         print_debug("Asked for dump, waiting for reply...")
         res = read_all(sock)
-        status, dump = string.split(res, "\n", 1)
+        status, dump = res.split("\n", 1)
         print_debug("Reply read. Status: %s." % status)
         if status != "0":
             raise Exception("Invalid status: " + status)
@@ -151,14 +150,14 @@ def dump(socket_file):
         sock.close()
         
 def send_string(sock, string):
-    sock.sendall(string + '\0')
+    sock.sendall((string + '\0').encode('ascii'))
 
 def read_all(sock):
     data = ''
     while True:
         ret = sock.recv(4096)
         if ret:
-            data += ret
+            data += ret.decode('ascii')
         else:
             break
     return data
@@ -210,12 +209,16 @@ def get_status_dict(pid):
                 wchan = open('/proc/%d/task/%s/wchan' % (pid, lwp)).read()
                 stat_data = open('/proc/%d/task/%s/stat' % (pid, lwp)).read()
                 # Third position is process status
-                status = stat_data.split()[2]
+
+                # be careful because thread name in parentheses can contain spaces
+                match = re.search("\d+ \(.+\) (.)", stat_data)
+
+                status = match.group(1)
                 if re.match('[0-9].+', wchan) is not None or wchan == '_stext':
                     # Discarding numeric channels (running processes or old kernels)
                     wchan = None
                 yield int(lwp), (status, wchan)
-            except IOError, e:
+            except IOError as e:
                 # Accounting for the fact that a thread can terminate between the moment we
                 # ask for the list (directory) and we try to read the file
                 if e.errno == 2: print_err('WARN: Missing task: %s' % lwp)
@@ -242,18 +245,18 @@ def colored(string, color_code):
         return string
       
 def print_frame_tree(x, max_threads, indent = 0):
-    for a, b in sorted(x.items()):
+    for a, b in x.items():
         if isinstance(a, ThreadStatus):
             status, threads = a, b
             print_thread_status(status, indent)
             thread_count = 0
             for t in threads:
                 if thread_count == max_threads:
-                    print '%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads)
+                    print('%s%d more threads...' % (get_indent(indent + 1), len(threads) - max_threads))
                     break
                 print_thread_details(t, indent + 1)
                 thread_count += 1
-            print 
+            print()
         else:
             frame, children = a, b
             print_frame(frame, indent)
@@ -262,9 +265,9 @@ def print_frame_tree(x, max_threads, indent = 0):
             print_frame_tree(children, max_threads, new_indent)
 
 def print_thread_details(details, indent):
-    print colored(
+    print(colored(
         '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid), 
-        threads_color)
+        threads_color))
 
 status_color = 34
 threads_color = 37
@@ -281,16 +284,16 @@ def print_thread_status(st, indent):
     wchan = ''
     if st.wchan is not None:
         wchan = 'in %s()' % st.wchan
-    print colored('%s+' % get_indent(indent), status_color),
+    print(colored('%s+' % get_indent(indent), status_color), end='')
     if st.java_status is not None:
         # Skipping native threads
-        print colored('%s %s %s %s' % (st.java_status, detail_str, blocked_id_str, blocked_class_str), status_color),
+        print(colored('%s %s %s %s' % (st.java_status, detail_str, blocked_id_str, blocked_class_str), status_color), end='')
     if st.os_status is not None:
-        print colored('[%s (%s) %s]:' % (st.os_status, os_status_desc[st.os_status], wchan), status_color)
+        print(colored('[%s (%s) %s]:' % (st.os_status, os_status_desc[st.os_status], wchan), status_color))
     else:
-        print colored('[unknown os status]:', status_color)
+        print(colored('[unknown os status]:', status_color))
     
-def print_frame(frame, indent): print '%s- %s' % (' ' * indent * tab_size, frame)
+def print_frame(frame, indent): print('%s- %s' % (' ' * indent * tab_size, frame))
 
 def get_indent(level): return ' ' * (level * tab_size)
     
@@ -325,7 +328,7 @@ def print_stack(stack):
 def print_stacks(stacks):
     for stack in stacks:
         print_stack(stack)
-        print
+        print()
 
 verbose = None
 print_color = sys.stdout.isatty()
@@ -342,7 +345,7 @@ if __name__ == '__main__':
             print_frame_tree(roots, options.max_threads)
         else:
             print_stacks(stacks)
-    except EnvironmentError, e:
+    except EnvironmentError as e:
         error_exit(e.strerror)
-    except ProcessError, e:
+    except ProcessError as e:
         error_exit(e.message)
