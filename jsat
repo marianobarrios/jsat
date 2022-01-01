@@ -8,12 +8,16 @@ import signal
 import time
 from optparse import OptionParser
 
-def print_err(string): print(string, file=sys.stderr)
 
-def print_debug(string): 
+def print_err(string):
+    print(string, file=sys.stderr)
+
+
+def print_debug(string):
     if verbose:
         print_err(string)
-          
+
+
 tab_size = 4
 
 os_status_desc = {
@@ -29,18 +33,21 @@ os_status_desc = {
     'P': "parked",
 }
 
+
 class StackTrace(object):
     def __init__(self):
         self.details = None
         self.frames = []
         self.status = ThreadStatus()
-        
+
+
 class ThreadDetails(object):
     def __init__(self, name, prio, tid, nid):
         self.name = name
         self.prio = prio
         self.tid = tid
         self.nid = nid
+
 
 class ThreadStatus(object):
     def __init__(self):
@@ -50,16 +57,21 @@ class ThreadStatus(object):
         self.blocked_class = None
         self.os_status = None
         self.wchan = None
+
     def __eq__(self, other):
         if isinstance(other, self.__class__):
             return self.__dict__ == other.__dict__
         else:
             return False
-    def __hash__(self): return hash(frozenset(self.__dict__.items()))
+
+    def __hash__(self):
+        return hash(frozenset(self.__dict__.items()))
+
 
 class ProcessError(Exception):
     pass
-    
+
+
 def attach_and_dump(pid):
     # If necessary, downgrade to JVM user and group, so it accepts the connection
     stat = os.stat('/proc/%d' % pid)
@@ -70,12 +82,14 @@ def attach_and_dump(pid):
     if not exists(socket):
         start_server(pid, socket)
     return dump(socket)
-    
-def socket_path(pid): 
+
+
+def socket_path(pid):
     path = '/tmp/.java_pid%d' % pid
     print_debug("Socket path: %s" % path)
     return path
-            
+
+
 def start_server(pid, socket):
     print_debug("Socket file does not exist. Asking process to start server...")
     created_attach_file = None
@@ -85,27 +99,31 @@ def start_server(pid, socket):
             touch(af)
             created_attach_file = af
         except IOError as e:
-            if e.errno == 13: # permission denied
+            if e.errno == 13:  # permission denied
                 print_debug("Cannot create attach file in process working directory. Trying with /tmp")
-                af = '/tmp/.attach_pid%d' % pid 
+                af = '/tmp/.attach_pid%d' % pid
                 touch(af)
                 created_attach_file = af
             else:
                 raise
         os.kill(pid, signal.SIGQUIT)
-        if not wait_for_existence(socket, wait = 0.05, timeout = 1):
+        if not wait_for_existence(socket, wait=0.05, timeout=1):
             raise ProcessError('Cannot attach: JVM not responding (or not a Java process)')
     finally:
         if created_attach_file:
             print_debug("Removing attach file: %s" % created_attach_file)
             os.remove(created_attach_file)
-    
+
+
 def touch(path):
     print_debug("Touching " + path)
     f = open(path, 'w')
-    try: f.write('')
-    finally: f.close()
-   
+    try:
+        f.write('')
+    finally:
+        f.close()
+
+
 def wait_for_existence(path, wait, timeout):
     print_debug("Waiting for existence of %s..." % path)
     t = 0
@@ -115,8 +133,9 @@ def wait_for_existence(path, wait, timeout):
         else:
             t += wait
             time.sleep(wait)
-    print_debug("Wait timed out after %.2f seconds" % timeout) 
+    print_debug("Wait timed out after %.2f seconds" % timeout)
     return False
+
 
 def exists(path):
     try:
@@ -127,7 +146,8 @@ def exists(path):
             return False
         else:
             raise oe
-    
+
+
 def dump(socket_file):
     protocol_version = '1'
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -136,7 +156,7 @@ def dump(socket_file):
     try:
         send_string(sock, protocol_version)
         send_string(sock, 'threaddump')
-        args = ['', '','  ']
+        args = ['', '', '  ']
         for arg in args:
             send_string(sock, arg)
         print_debug("Asked for dump, waiting for reply...")
@@ -148,9 +168,11 @@ def dump(socket_file):
         return dump
     finally:
         sock.close()
-        
+
+
 def send_string(sock, string):
     sock.sendall((string + '\0').encode('ascii'))
+
 
 def read_all(sock):
     data = ''
@@ -162,11 +184,14 @@ def read_all(sock):
             break
     return data
 
+
 def build_stacks(jstack, status_dict):
     res = []
+
     def add_st(st):
         st.frames = list(reversed(st.frames))
         res.append(st)
+
     curr = None
     for line in jstack.split('\n'):
         mo_head = re.search(r'^"([^"]+)".*prio=([0-9]+).*tid=(0x[0-9a-f]+).*nid=(0x[0-9a-f]+)', line)
@@ -174,35 +199,37 @@ def build_stacks(jstack, status_dict):
         mo_state = re.search(r'java.lang.Thread.State: ([A-Z_]+)(?: \(([^)]+)\))?', line)
         mo_blocked = re.search(r'- [^<>]+<0x([^>]+)> +\(a ([^)]+)\)', line)
         if mo_head is not None:
-            if curr is not None: 
+            if curr is not None:
                 add_st(curr)
             st = StackTrace()
             st.details = ThreadDetails(
-                name = mo_head.group(1), 
-                prio = int(mo_head.group(2)),
-                tid = int(mo_head.group(3), 16), 
-                nid = int(mo_head.group(4), 16)) 
+                name=mo_head.group(1),
+                prio=int(mo_head.group(2)),
+                tid=int(mo_head.group(3), 16),
+                nid=int(mo_head.group(4), 16))
             status = status_dict.get(st.details.nid)
             if status is not None:
                 st.status.os_status, st.status.wchan = status
             else:
-                print_err('WARN: Could not obtain OS status for thread %d' % st.details.nid)  
+                print_err('WARN: Could not obtain OS status for thread %d' % st.details.nid)
             curr = st
         elif mo_frame is not None:
             curr.frames.append(mo_frame.group(1))
         elif mo_state is not None:
-            curr.status.java_status = mo_state.group(1) 
+            curr.status.java_status = mo_state.group(1)
             curr.status.java_status_detail = mo_state.group(2)
         elif mo_blocked is not None:
             if curr.status.java_status in ['WAITING', 'TIMED_WAITING', 'BLOCKED'] and len(curr.frames) == 1:
                 curr.status.blocked_id = int(mo_blocked.group(1), 16)
-                curr.status.blocked_class = mo_blocked.group(2) 
-    if curr is not None: 
+                curr.status.blocked_class = mo_blocked.group(2)
+    if curr is not None:
         add_st(curr)
     return res
 
+
 def get_status_dict(pid):
     lwp_list = os.listdir('/proc/%d/task' % pid)
+
     def wchan_gen():
         for lwp in lwp_list:
             try:
@@ -221,9 +248,13 @@ def get_status_dict(pid):
             except IOError as e:
                 # Accounting for the fact that a thread can terminate between the moment we
                 # ask for the list (directory) and we try to read the file
-                if e.errno == 2: print_err('WARN: Missing task: %s' % lwp)
-                else: raise
+                if e.errno == 2:
+                    print_err('WARN: Missing task: %s' % lwp)
+                else:
+                    raise
+
     return dict(wchan_gen())
+
 
 def build_frame_tree(st):
     def process_frames(frame_dict, frames, stack):
@@ -231,20 +262,23 @@ def build_frame_tree(st):
             process_frames(frame_dict.setdefault(frames[0], {}), frames[1:], stack)
         else:
             frame_dict.setdefault(stack.status, []).append(stack.details)
+
     roots = {}
     for stack in st:
         if not stack.frames:
             stack.frames = ['<no stack trace information>']
         process_frames(roots, stack.frames, stack)
     return roots
-  
+
+
 def colored(string, color_code):
     if print_color:
         return "\033[" + str(color_code) + "m" + string + "\033[39m"
     else:
         return string
-      
-def print_frame_tree(x, max_threads, indent = 0):
+
+
+def print_frame_tree(x, max_threads, indent=0):
     for a, b in x.items():
         if isinstance(a, ThreadStatus):
             status, threads = a, b
@@ -260,17 +294,22 @@ def print_frame_tree(x, max_threads, indent = 0):
         else:
             frame, children = a, b
             print_frame(frame, indent)
-            if len(children) > 1: new_indent = indent + 1
-            else: new_indent = indent
+            if len(children) > 1:
+                new_indent = indent + 1
+            else:
+                new_indent = indent
             print_frame_tree(children, max_threads, new_indent)
+
 
 def print_thread_details(details, indent):
     print(colored(
-        '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid), 
+        '%s%s prio=%d tid=0x%x nid=%d' % (get_indent(indent), details.name, details.prio, details.tid, details.nid),
         threads_color))
+
 
 status_color = 34
 threads_color = 37
+
 
 def print_thread_status(st, indent):
     detail_str = ''
@@ -287,37 +326,42 @@ def print_thread_status(st, indent):
     print(colored('%s+' % get_indent(indent), status_color), end='')
     if st.java_status is not None:
         # Skipping native threads
-        print(colored('%s %s %s %s' % (st.java_status, detail_str, blocked_id_str, blocked_class_str), status_color), end='')
+        print(colored('%s %s %s %s' % (st.java_status, detail_str, blocked_id_str, blocked_class_str), status_color),
+              end='')
     if st.os_status is not None:
         print(colored('[%s (%s) %s]:' % (st.os_status, os_status_desc[st.os_status], wchan), status_color))
     else:
         print(colored('[unknown os status]:', status_color))
-    
+
+
 def print_frame(frame, indent): print('%s- %s' % (' ' * indent * tab_size, frame))
 
+
 def get_indent(level): return ' ' * (level * tab_size)
-    
+
+
 def error_exit(message):
     print_err('%s: %s' % (sys.argv[0], message))
     sys.exit(1)
 
+
 def parse_args():
     parser = OptionParser(
-        usage = 
-            "usage: %prog [options] pid\n\n" + 
-            "Connect to a JVM and dump the stack traces.\n" +
-            "The dump from the JVM is merged with OS information regarding thread states.")
-    parser.add_option('-v', action = 'store_true', dest = 'verbose', help = "activate verbose mode")
-    parser.add_option('-g', action = 'store_true', dest = 'group', 
-        help = "group stack that share frames; when this option is enabled the frames are displayed from top " +
-        "to bottom (this is the opposite to the usual Java style)")
-    parser.add_option("-n", type = 'int', dest = "max_threads", default = '10', 
-        help = 'maximum number of threads printed for each group. "-1" shows all. Default: %default')
+        usage="usage: %prog [options] pid\n\n" +
+              "Connect to a JVM and dump the stack traces.\n" +
+              "The dump from the JVM is merged with OS information regarding thread states.")
+    parser.add_option('-v', action='store_true', dest='verbose', help="activate verbose mode")
+    parser.add_option('-g', action='store_true', dest='group',
+                      help="group stack that share frames; when this option is enabled the frames are displayed from "
+                           "top to bottom (this is the opposite to the usual Java style)")
+    parser.add_option("-n", type='int', dest="max_threads", default='10',
+                      help='maximum number of threads printed for each group. "-1" shows all. Default: %default')
     options, args = parser.parse_args()
     if len(args) != 1:
         parser.error('A java pid must be supplied')
     pid = int(args[0])
     return pid, options
+
 
 def print_stack(stack):
     print_thread_details(stack.details, 0)
@@ -325,10 +369,12 @@ def print_stack(stack):
     for frame in reversed(stack.frames):
         print_frame(frame, 0)
 
+
 def print_stacks(stacks):
     for stack in stacks:
         print_stack(stack)
         print()
+
 
 verbose = None
 print_color = sys.stdout.isatty()
