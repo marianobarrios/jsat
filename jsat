@@ -394,4 +394,4 @@ if __name__ == '__main__':
     except EnvironmentError as e:
         error_exit(e.strerror)
     except ProcessError as e:
-        error_exit(e.message)
+        error_exit(str(e))
